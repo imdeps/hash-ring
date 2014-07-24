@@ -22,7 +22,8 @@
          remove_node/2,
          find_node/2,
          set_mode/2,
-         stop/0
+         stop/0,
+         set_priority_high/0
 ]).
 
 -define(SERVER, ?MODULE).
@@ -92,6 +93,8 @@ find_node(Ring, Key) when is_binary(Key) ->
 set_mode(Ring, Mode) when is_integer(Mode) ->
     gen_server:call(?SERVER, {set_mode, {Ring, Mode}}).
     
+set_priority_high() ->
+    gen_server:call(?SERVER, set_priority_high).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Internal functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -102,14 +105,16 @@ set_mode(Ring, Mode) when is_integer(Mode) ->
 }).
 
 init(Drv) ->
+    process_flag(priority, high),
     Port = open_port({spawn, Drv}, [binary]),
     {ok, #state{
        port = Port,
        rings = dict:new(),
        queue = queue:new() }}.
 
-    
-    
+handle_call(set_priority_high, _From, State) ->
+    process_flag(priority, high),
+    {reply, ok, State};
 handle_call({create_ring, {Ring, NumReplicas, HashFunction}}, _From, #state{ port = Port, rings = Rings } = State) ->
     Port ! {self(), {command, <<1:8, NumReplicas:32, HashFunction:8>>}},
     receive 
