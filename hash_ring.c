@@ -172,11 +172,18 @@ int hash_ring_add_items(hash_ring_t *ring, hash_ring_node_t *node) {
     uint64_t keyInt;
 
     // Resize the items array
-    void *resized = realloc(ring->items, (sizeof(hash_ring_item_t*) * ring->numNodes * ring->numReplicas));
-    if(resized == NULL) {
+    //void *resized = realloc(ring->items, (sizeof(hash_ring_item_t*) * ring->numNodes * ring->numReplicas));
+    //if(resized == NULL) {
+    //    return HASH_RING_ERR;
+    //}
+    //ring->items = (hash_ring_item_t**)resized;
+
+    //optimise: sort new items,then merge two part
+    hash_ring_item_t **adds = (hash_ring_item_t **)malloc((sizeof(hash_ring_item_t*) * ring->numReplicas));
+    if(adds == NULL) {
         return HASH_RING_ERR;
     }
-    ring->items = (hash_ring_item_t**)resized;
+
     for(x = 0; x < ring->numReplicas; x++) {
         if(ring->mode == HASH_RING_MODE_LIBMEMCACHED_COMPAT) {
             concat_len = snprintf(concat_buf, sizeof(concat_buf), "-%d", x);
@@ -197,9 +204,49 @@ int hash_ring_add_items(hash_ring_t *ring, hash_ring_node_t *node) {
         item->node = node;
         item->number = keyInt;
         
-        ring->items[(ring->numNodes - 1) * ring->numReplicas + x] = item;
+        adds[x] = item;
     }
 
+    quicksort((void**)adds, ring->numReplicas, item_sort);
+    //ring->numNodes * ring->numReplicas
+    if(ring->items == NULL || ring-> numNodes == 1) {
+        ring->items = adds;
+    } else {
+        size_t size_new = sizeof(hash_ring_item_t*) * ring->numNodes * ring->numReplicas;
+        hash_ring_item_t **news = (hash_ring_item_t **)malloc(size_new);
+        hash_ring_item_t **olds = ring->items;
+        if(news == NULL) {
+            return HASH_RING_ERR;
+        }
+        int oldlen = (ring->numNodes - 1) * ring->numReplicas;
+        int addlen = ring->numReplicas;
+        int i=0, j=0, k=0;
+        while(1) {
+            if(i == oldlen && j == addlen) {
+                break;
+            }
+            if(j == addlen) {
+                news[k++] = olds[i++];
+                continue;
+            }
+            if(i == oldlen) {
+                news[k++] = adds[j++];
+                continue;
+            }
+            int ret = item_sort(olds[i], adds[j]);
+            if(ret == 0) {
+                news[k++] = olds[i++];
+                news[k++] = adds[j++];
+            } else if (ret < 0) {
+                news[k++] = olds[i++];
+            } else {
+                news[k++] = adds[j++];
+            }
+        };
+        free(adds);
+        free(olds);
+        ring->items = news;
+    }
     ring->numItems += ring->numReplicas;
     return HASH_RING_OK;
 }
@@ -259,7 +306,7 @@ int hash_ring_add_node(hash_ring_t *ring, uint8_t *name, uint32_t nameLen) {
     }
 
     // Sort the items
-    quicksort((void**)ring->items, ring->numItems, item_sort);
+    // quicksort((void**)ring->items, ring->numItems, item_sort);
 
     return HASH_RING_OK;
 }
@@ -294,10 +341,26 @@ int hash_ring_remove_node(hash_ring_t *ring, uint8_t *name, uint32_t nameLen) {
                         ring->items[x] = NULL;
                     }
                 }
-                
+
                 // By re-sorting, all the NULLs will be at the end of the array
                 // Then the numItems is reset and that memory is no longer used
-                quicksort((void**)ring->items, ring->numItems, item_sort);
+                // quicksort((void**)ring->items, ring->numItems, item_sort);
+
+                // optimise: just remove NULL items, needn't sort
+                int start = -1;
+                for(x = 0; x < ring->numItems; x++) {
+                    if(start == -1) {
+                        if(ring->items[x] == NULL) {
+                            start = x;
+                        }
+                    }
+                    else {
+                        if(ring->items[x] != NULL) {
+                            ring->items[start++] = ring->items[x];
+                            ring->items[x] = NULL;
+                        }
+                    }
+                }
                 ring->numItems -= ring->numReplicas;
                 
                 free(node);
