@@ -200,7 +200,7 @@ handle_info({Port, {data, Data}}, #state{port = Port, queue = Queue} = State) ->
     R =
     case Data of
         <<3:8>> ->
-            {error, invalid_ring};
+            {error, ring_not_found};
         <<2:8>> ->
             {error, node_not_found};
         <<1:8>> ->

@@ -27,6 +27,8 @@ typedef int ErlDrvSSizeT;
 
 #define RETURN_OK 0x00
 #define RETURN_ERR 0x01
+#define RETURN_NODE_NOT_FOUND 0x02
+#define RETURN_RING_NOT_FOUND 0x03
 
 typedef struct {
     ErlDrvPort port;
@@ -161,7 +163,11 @@ static void hash_ring_drv_output(ErlDrvData handle, char *buff, ErlDrvSizeT buff
             if(node != NULL) {
                 driver_output(d->port, (char*)node->name, node->nameLen);
                 return;
+            }else{
+               res = RETURN_NODE_NOT_FOUND;
             }
+        }else{
+           res = RETURN_RING_NOT_FOUND;
         }
     }
     else if(bufflen == 6 && buff[0] == COMMAND_SET_MODE) {
